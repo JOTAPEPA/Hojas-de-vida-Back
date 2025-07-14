@@ -1,0 +1,29 @@
+{
+  "name": "hojas-de-vida-back",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "dev": "node main.js"
+  },
+  "repository": {
+    "type": "module",
+    "url": "git+https://github.com/JOTAPEPA/Hojas-de-vida-Back.git"
+  },
+  "author": "JP",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/JOTAPEPA/Hojas-de-vida-Back/issues"
+  },
+  "homepage": "https://github.com/JOTAPEPA/Hojas-de-vida-Back#readme",
+  "description": "",
+  "dependencies": {
+    "cloudinary": "^1.41.3",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.0",
+    "express": "^5.1.0",
+    "mongoose": "^8.16.3",
+    "multer": "^2.0.1",
+    "multer-storage-cloudinary": "^4.0.0"
+  }
+}
