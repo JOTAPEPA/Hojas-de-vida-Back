@@ -47,7 +47,38 @@ app.post('/api/upload', upload.single('archivo'), (req, res) => {
 // === Conexión a MongoDB y servidor ===
 const MONGO_URI = process.env.MONGO_URI;
 
-mongoose.connect(MONGO_URI)
+// Función para conectar a MongoDB con reintentos
+async function connectToMongoDB() {
+  const maxRetries = 3;
+  let retries = 0;
+
+  const connectionOptions = {
+    serverSelectionTimeoutMS: 30000,
+    socketTimeoutMS: 75000,
+  };
+
+  while (retries < maxRetries) {
+    try {
+      await mongoose.connect(MONGO_URI, connectionOptions);
+      console.log("Conexión a la base de datos exitosa");
+      return;
+    } catch (error) {
+      retries++;
+      console.log(`Intento ${retries} fallido. Error:`, error.message);
+      
+      if (retries === maxRetries) {
+        console.error('Error al conectar a MongoDB Atlas después de', maxRetries, 'intentos');
+        throw error;
+      }
+      
+      // Esperar 2 segundos antes del siguiente intento
+      await new Promise(resolve => setTimeout(resolve, 2000));
+    }
+  }
+}
+
+// Iniciar conexión y servidor
+connectToMongoDB()
   .then(() => {
     console.log("Conexión a la base de datos exitosa");
     app.listen(3999, () => {

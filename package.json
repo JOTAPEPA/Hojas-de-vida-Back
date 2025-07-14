@@ -1,13 +1,13 @@
 {
   "name": "hojas-de-vida-back",
   "version": "1.0.0",
+  "type": "module",
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "dev": "node main.js"
   },
   "repository": {
-    "type": "module",
     "url": "git+https://github.com/JOTAPEPA/Hojas-de-vida-Back.git"
   },
   "author": "JP",
