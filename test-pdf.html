@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Prueba de Subida y Descarga de PDFs</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .section {
+            margin: 20px 0;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        .result {
+            background: #f5f5f5;
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 3px;
+        }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 3px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        input[type="file"] {
+            margin: 10px 0;
+        }
+        .url-input {
+            width: 100%;
+            padding: 5px;
+            margin: 5px 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>Prueba de Subida y Descarga de PDFs</h1>
+    
+    <div class="section">
+        <h2>1. Subir Archivo</h2>
+        <input type="file" id="fileInput" accept=".pdf,.jpg,.png,.doc,.docx">
+        <button onclick="uploadFile()">Subir Archivo</button>
+        <div id="uploadResult" class="result"></div>
+    </div>
+
+    <div class="section">
+        <h2>2. Probar Descarga de PDF</h2>
+        <input type="text" id="publicIdInput" placeholder="Public ID del archivo" class="url-input">
+        <input type="text" id="fileNameInput" placeholder="Nombre del archivo (opcional)" class="url-input">
+        <button onclick="downloadPDF()">Descargar PDF</button>
+        <button onclick="viewPDF()">Ver PDF</button>
+        <button onclick="getFileInfo()">Info del Archivo</button>
+        <div id="downloadResult" class="result"></div>
+    </div>
+
+    <div class="section">
+        <h2>3. Probar URL Genérica</h2>
+        <input type="text" id="genericPublicId" placeholder="Public ID del archivo" class="url-input">
+        <button onclick="getGenericDownloadUrl()">Obtener URL de Descarga</button>
+        <div id="genericResult" class="result"></div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:3999/api';
+
+        async function uploadFile() {
+            const fileInput = document.getElementById('fileInput');
+            const file = fileInput.files[0];
+            
+            if (!file) {
+                alert('Por favor selecciona un archivo');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('archivo', file);
+
+            try {
+                const response = await fetch(`${API_BASE}/upload`, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const result = await response.json();
+                document.getElementById('uploadResult').innerHTML = `
+                    <h3>Resultado de Subida:</h3>
+                    <pre>${JSON.stringify(result, null, 2)}</pre>
+                `;
+
+                // Auto-llenar el public_id si fue exitoso
+                if (result.success && result.public_id) {
+                    document.getElementById('publicIdInput').value = result.public_id;
+                    document.getElementById('fileNameInput').value = result.nombre;
+                    document.getElementById('genericPublicId').value = result.public_id;
+                }
+            } catch (error) {
+                document.getElementById('uploadResult').innerHTML = `
+                    <h3>Error:</h3>
+                    <p style="color: red;">${error.message}</p>
+                `;
+            }
+        }
+
+        async function downloadPDF() {
+            const publicId = document.getElementById('publicIdInput').value;
+            const fileName = document.getElementById('fileNameInput').value;
+            
+            if (!publicId) {
+                alert('Por favor ingresa el Public ID');
+                return;
+            }
+
+            try {
+                const params = new URLSearchParams();
+                if (fileName) params.append('fileName', fileName);
+                params.append('action', 'download');
+
+                const url = `${API_BASE}/pdf/${publicId}?${params.toString()}`;
+                window.open(url, '_blank');
+
+                document.getElementById('downloadResult').innerHTML = `
+                    <h3>Descarga iniciada:</h3>
+                    <p>URL: <a href="${url}" target="_blank">${url}</a></p>
+                `;
+            } catch (error) {
+                document.getElementById('downloadResult').innerHTML = `
+                    <h3>Error:</h3>
+                    <p style="color: red;">${error.message}</p>
+                `;
+            }
+        }
+
+        async function viewPDF() {
+            const publicId = document.getElementById('publicIdInput').value;
+            const fileName = document.getElementById('fileNameInput').value;
+            
+            if (!publicId) {
+                alert('Por favor ingresa el Public ID');
+                return;
+            }
+
+            try {
+                const params = new URLSearchParams();
+                if (fileName) params.append('fileName', fileName);
+
+                const response = await fetch(`${API_BASE}/pdf/${publicId}?${params.toString()}`);
+                const result = await response.json();
+
+                document.getElementById('downloadResult').innerHTML = `
+                    <h3>URLs del PDF:</h3>
+                    <pre>${JSON.stringify(result, null, 2)}</pre>
+                    <p><a href="${result.urls.view}" target="_blank">Ver PDF en nueva ventana</a></p>
+                `;
+            } catch (error) {
+                document.getElementById('downloadResult').innerHTML = `
+                    <h3>Error:</h3>
+                    <p style="color: red;">${error.message}</p>
+                `;
+            }
+        }
+
+        async function getFileInfo() {
+            const publicId = document.getElementById('publicIdInput').value;
+            
+            if (!publicId) {
+                alert('Por favor ingresa el Public ID');
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_BASE}/file-info/${publicId}`);
+                const result = await response.json();
+
+                document.getElementById('downloadResult').innerHTML = `
+                    <h3>Información del Archivo:</h3>
+                    <pre>${JSON.stringify(result, null, 2)}</pre>
+                `;
+            } catch (error) {
+                document.getElementById('downloadResult').innerHTML = `
+                    <h3>Error:</h3>
+                    <p style="color: red;">${error.message}</p>
+                `;
+            }
+        }
+
+        async function getGenericDownloadUrl() {
+            const publicId = document.getElementById('genericPublicId').value;
+            
+            if (!publicId) {
+                alert('Por favor ingresa el Public ID');
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_BASE}/download/${publicId}?fileType=pdf`);
+                const result = await response.json();
+
+                document.getElementById('genericResult').innerHTML = `
+                    <h3>URLs Genéricas:</h3>
+                    <pre>${JSON.stringify(result, null, 2)}</pre>
+                    ${result.viewUrl ? `<p><a href="${result.viewUrl}" target="_blank">Ver archivo</a></p>` : ''}
+                    ${result.downloadUrl ? `<p><a href="${result.downloadUrl}" target="_blank">Descargar archivo</a></p>` : ''}
+                `;
+            } catch (error) {
+                document.getElementById('genericResult').innerHTML = `
+                    <h3>Error:</h3>
+                    <p style="color: red;">${error.message}</p>
+                `;
+            }
+        }
+    </script>
+</body>
+</html>

@@ -1,4 +1,5 @@
 import User from "../Models/user.js";
+import { generateDownloadUrl, generateDirectUrl, deleteFile } from "../utils/cloudinaryUtils.js";
 
 const httpUser = {
 
@@ -36,7 +37,7 @@ const httpUser = {
                 Ciudad,
                 Sede,
                 Sanciones,
-                DocumentUrls
+                Observaciones
             } = req.body;
 
             const newUser = new User({
@@ -71,7 +72,8 @@ const httpUser = {
                 Ciudad,
                 Sede,
                 Sanciones,
-                DocumentUrls
+                Observaciones,
+
             });
 
             const savedUser = await newUser.save();
@@ -134,7 +136,8 @@ const httpUser = {
                 Ciudad,
                 Sede,
                 Sanciones,
-                DocumentUrls
+                Observaciones
+              
             } = req.body;
 
             let update = {
@@ -169,7 +172,8 @@ const httpUser = {
                 Ciudad,
                 Sede,
                 Sanciones,
-                DocumentUrls
+                Observaciones
+                
             };
 
             const modifiedUser = await User.findByIdAndUpdate(id, update, { new: true });
@@ -306,51 +310,6 @@ const httpUser = {
             console.error("Error al obtener documentos:", error);
             res.status(500).json({ 
                 message: "Error al obtener documentos",
-                error: error.message 
-            });
-        }
-    },
-
-    // Función para eliminar un documento específico
-    deleteDocument: async (req, res) => {
-        try {
-            const { id, documentType } = req.params;
-            
-            // Verificar que el tipo de documento sea válido
-            const validDocumentTypes = [
-                'hojaVida', 'cedula', 'certificadoEstudios', 'certificadoEPS',
-                'certificadoAntecedentes', 'contratoTrabajo', 'examenMedico', 'referenciaLaboral'
-            ];
-
-            if (!validDocumentTypes.includes(documentType)) {
-                return res.status(400).json({
-                    message: "Tipo de documento no válido"
-                });
-            }
-
-            const updateQuery = {};
-            updateQuery[`DocumentUrls.${documentType}`] = undefined;
-
-            const updatedUser = await User.findByIdAndUpdate(
-                id,
-                { $unset: updateQuery },
-                { new: true }
-            );
-
-            if (!updatedUser) {
-                return res.status(404).json({ 
-                    message: "Usuario no encontrado" 
-                });
-            }
-
-            res.json({
-                message: `Documento ${documentType} eliminado exitosamente`,
-                user: updatedUser
-            });
-        } catch (error) {
-            console.error("Error al eliminar documento:", error);
-            res.status(500).json({ 
-                message: "Error al eliminar documento",
                 error: error.message 
             });
         }

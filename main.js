@@ -5,6 +5,7 @@ import cors from 'cors';
 import multer from 'multer';
 import { v2 as cloudinary } from 'cloudinary';
 import { CloudinaryStorage } from 'multer-storage-cloudinary';
+import { fileFilter, handleUploadError, generateUniqueFileName } from './middleware/fileValidation.js';
 
 dotenv.config(); // Cargar las variables de entorno desde el archivo .env
 
@@ -16,6 +17,9 @@ app.use(cors());
 app.use(express.json());
 app.use("/api/user", httpUser);
 
+// Middleware para manejar errores de subida de archivos
+app.use(handleUploadError);
+
 // === Configuración de Cloudinary ===
 cloudinary.config({
   cloud_name: process.env.CLOUD_NAME,
@@ -26,23 +30,279 @@ cloudinary.config({
 // === Configuración de Multer + Cloudinary ===
 const storage = new CloudinaryStorage({
   cloudinary: cloudinary,
-  params: {
-    folder: 'uploads',
-    resource_type: 'auto', // Soporta imágenes, PDFs, etc.
+  params: (req, file) => {
+    // Configuración específica según el tipo de archivo
+    const isPDF = file.mimetype === 'application/pdf';
+    const isImage = file.mimetype.startsWith('image/');
+    
+    return {
+      folder: 'uploads',
+      resource_type: isPDF ? 'raw' : 'auto', // PDFs como 'raw', otros como 'auto'
+      access_mode: "public",
+      type: "upload",
+      public_id: generateUniqueFileName(file.originalname, file.fieldname),
+      // Para PDFs, agregar configuración adicional
+      ...(isPDF && {
+        format: 'pdf',
+        flags: 'attachment'
+      })
+    };
   },
 });
 
-const upload = multer({ storage });
-
-// Ruta de prueba para subir archivo
-app.post('/api/upload', upload.single('archivo'), (req, res) => {
-  res.json({
-    url: req.file.path,
-    nombre: req.file.originalname,
-    tipo: req.file.mimetype,
-  });
+const upload = multer({ 
+  storage,
+  fileFilter,
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10MB
+    files: 10 // máximo 10 archivos
+  }
 });
 
+// Ruta de prueba para subir archivo
+app.post('/api/upload', upload.single('archivo'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: 'No se proporcionó ningún archivo'
+      });
+    }
+
+    const isPDF = req.file.mimetype === 'application/pdf';
+    
+    const response = {
+      success: true,
+      url: req.file.path,
+      public_id: req.file.public_id,
+      nombre: req.file.originalname,
+      tipo: req.file.mimetype,
+      size: req.file.bytes,
+      secure_url: req.file.secure_url,
+      isPDF: isPDF,
+      resource_type: isPDF ? 'raw' : 'auto'
+    };
+
+    // Si es PDF, agregar URLs específicas
+    if (isPDF) {
+      try {
+        const { generatePDFUrls } = await import('./utils/cloudinaryUtils.js');
+        const pdfUrls = generatePDFUrls(req.file.public_id, req.file.originalname);
+        response.pdfUrls = pdfUrls;
+      } catch (urlError) {
+        console.warn('Error al generar URLs de PDF:', urlError);
+      }
+    }
+
+    res.json(response);
+  } catch (error) {
+    console.error('Error al subir archivo:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error interno del servidor al subir archivo',
+      error: error.message
+    });
+  }
+});
+
+// Ruta para subir múltiples archivos
+app.post('/api/upload-multiple', upload.array('archivos', 10), (req, res) => {
+  try {
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'No se proporcionaron archivos'
+      });
+    }
+
+    const uploadedFiles = req.files.map(file => ({
+      url: file.path,
+      public_id: file.public_id,
+      nombre: file.originalname,
+      tipo: file.mimetype,
+      size: file.bytes,
+      secure_url: file.secure_url
+    }));
+
+    res.json({
+      success: true,
+      files: uploadedFiles,
+      count: uploadedFiles.length
+    });
+  } catch (error) {
+    console.error('Error al subir archivos múltiples:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error interno del servidor al subir archivos',
+      error: error.message
+    });
+  }
+});
+
+// Ruta para generar URL de descarga segura
+app.get('/api/download/:publicId', async (req, res) => {
+  try {
+    const { publicId } = req.params;
+    const { fileName, fileType } = req.query;
+    
+    // Detectar si es PDF
+    const isPDF = fileType === 'pdf' || (fileName && fileName.toLowerCase().endsWith('.pdf'));
+    
+    if (isPDF) {
+      // Usar la función específica para PDFs
+      const { generatePDFUrls } = await import('./utils/cloudinaryUtils.js');
+      const urls = generatePDFUrls(publicId, fileName);
+      
+      return res.json({
+        success: true,
+        isPDF: true,
+        downloadUrl: urls.download,
+        viewUrl: urls.view,
+        directUrl: urls.direct
+      });
+    } else {
+      // Para otros tipos de archivo
+      const downloadUrl = cloudinary.url(publicId, {
+        resource_type: 'auto',
+        type: 'upload',
+        flags: 'attachment'
+      });
+
+      const finalUrl = fileName ? 
+        `${downloadUrl}&fl_attachment=${encodeURIComponent(fileName)}` : 
+        downloadUrl;
+
+      return res.json({
+        success: true,
+        isPDF: false,
+        downloadUrl: finalUrl,
+        directUrl: cloudinary.url(publicId, {
+          resource_type: 'auto',
+          type: 'upload'
+        })
+      });
+    }
+  } catch (error) {
+    console.error('Error al generar URL de descarga:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error al generar URL de descarga',
+      error: error.message
+    });
+  }
+});
+
+// Ruta para eliminar archivo de Cloudinary
+app.delete('/api/delete/:publicId', async (req, res) => {
+  try {
+    const { publicId } = req.params;
+    
+    const result = await cloudinary.uploader.destroy(publicId, {
+      resource_type: 'auto'
+    });
+
+    if (result.result === 'ok') {
+      res.json({
+        success: true,
+        message: 'Archivo eliminado exitosamente',
+        result: result
+      });
+    } else {
+      res.status(400).json({
+        success: false,
+        message: 'No se pudo eliminar el archivo',
+        result: result
+      });
+    }
+  } catch (error) {
+    console.error('Error al eliminar archivo:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error interno del servidor al eliminar archivo',
+      error: error.message
+    });
+  }
+});
+
+// Ruta específica para manejar PDFs
+app.get('/api/pdf/:publicId', async (req, res) => {
+  try {
+    const { publicId } = req.params;
+    const { fileName, action = 'view' } = req.query;
+    
+    const { generatePDFUrls } = await import('./utils/cloudinaryUtils.js');
+    const urls = generatePDFUrls(publicId, fileName);
+    
+    if (action === 'download') {
+      // Redirigir directamente a la URL de descarga
+      return res.redirect(urls.download);
+    } else {
+      // Para visualización, devolver la URL
+      return res.json({
+        success: true,
+        message: 'URLs de PDF generadas exitosamente',
+        urls: urls,
+        publicId: publicId
+      });
+    }
+  } catch (error) {
+    console.error('Error al manejar PDF:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error al manejar archivo PDF',
+      error: error.message
+    });
+  }
+});
+
+// Ruta para obtener información de archivo y determinar tipo
+app.get('/api/file-info/:publicId', async (req, res) => {
+  try {
+    const { publicId } = req.params;
+    
+    // Intentar obtener info como 'auto' primero
+    let fileInfo = null;
+    let resourceType = 'auto';
+    
+    try {
+      fileInfo = await cloudinary.api.resource(publicId, {
+        resource_type: 'auto'
+      });
+    } catch (autoError) {
+      // Si falla con 'auto', intentar con 'raw' (para PDFs)
+      try {
+        fileInfo = await cloudinary.api.resource(publicId, {
+          resource_type: 'raw'
+        });
+        resourceType = 'raw';
+      } catch (rawError) {
+        throw new Error('Archivo no encontrado en Cloudinary');
+      }
+    }
+    
+    const isPDF = fileInfo.format === 'pdf' || resourceType === 'raw';
+    
+    res.json({
+      success: true,
+      fileInfo: {
+        public_id: fileInfo.public_id,
+        url: fileInfo.secure_url,
+        size: fileInfo.bytes,
+        format: fileInfo.format,
+        resource_type: resourceType,
+        isPDF: isPDF,
+        created_at: fileInfo.created_at
+      }
+    });
+  } catch (error) {
+    console.error('Error al obtener información del archivo:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error al obtener información del archivo',
+      error: error.message
+    });
+  }
+});
 
 // === Conexión a MongoDB y servidor ===
 const MONGO_URI = process.env.MONGO_URI;

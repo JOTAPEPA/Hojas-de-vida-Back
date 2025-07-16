@@ -32,6 +32,59 @@ const userSchema = new mongoose.Schema({
     Ciudad: { type: String, required: true },
     Sede: { type: String, required: true },
     Sanciones: { type: String },
+    Observaciones: { type: String },
+    
+    // Estructura para almacenar URLs de documentos
+    DocumentUrls: {
+        hojaVida: {
+            url: { type: String },
+            public_id: { type: String },
+            filename: { type: String },
+            uploadDate: { type: Date, default: Date.now }
+        },
+        cedula: {
+            url: { type: String },
+            public_id: { type: String },
+            filename: { type: String },
+            uploadDate: { type: Date, default: Date.now }
+        },
+        certificadoEstudios: {
+            url: { type: String },
+            public_id: { type: String },
+            filename: { type: String },
+            uploadDate: { type: Date, default: Date.now }
+        },
+        certificadoEPS: {
+            url: { type: String },
+            public_id: { type: String },
+            filename: { type: String },
+            uploadDate: { type: Date, default: Date.now }
+        },
+        certificadoAntecedentes: {
+            url: { type: String },
+            public_id: { type: String },
+            filename: { type: String },
+            uploadDate: { type: Date, default: Date.now }
+        },
+        contratoTrabajo: {
+            url: { type: String },
+            public_id: { type: String },
+            filename: { type: String },
+            uploadDate: { type: Date, default: Date.now }
+        },
+        examenMedico: {
+            url: { type: String },
+            public_id: { type: String },
+            filename: { type: String },
+            uploadDate: { type: Date, default: Date.now }
+        },
+        referenciaLaboral: {
+            url: { type: String },
+            public_id: { type: String },
+            filename: { type: String },
+            uploadDate: { type: Date, default: Date.now }
+        }
+    }
     
 }, {
     timestamps: true // Esto agregará automáticamente createdAt y updatedAt

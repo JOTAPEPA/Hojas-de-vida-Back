@@ -11,4 +11,8 @@ router.put('/:id', [], httpUser.putUpdateUser);
 router.put('/inactivo/:id', httpUser.putModificarInactivo);
 router.put('/activo/:id', httpUser.putModificarActivo);
 
+// Rutas para manejo de documentos
+router.put('/documents/:id', httpUser.putUpdateDocuments);
+router.get('/documents/:id', httpUser.getDocumentsByUserId);
+
 export default router;
