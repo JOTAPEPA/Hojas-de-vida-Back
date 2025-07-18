@@ -38,13 +38,10 @@ const storage = new CloudinaryStorage({
     return {
       folder: 'uploads',
       resource_type: isPDF ? 'raw' : 'auto', // PDFs como 'raw', otros como 'auto'
-      access_mode: "public",
-      type: "upload",
       public_id: generateUniqueFileName(file.originalname, file.fieldname),
-      // Para PDFs, agregar configuración adicional
+      // Para PDFs, configuración sin restricciones de acceso
       ...(isPDF && {
-        format: 'pdf',
-        flags: 'attachment'
+        format: 'pdf'
       })
     };
   },
@@ -58,6 +55,24 @@ const upload = multer({
     files: 10 // máximo 10 archivos
   }
 });
+
+// Función alternativa para subir PDFs directamente (sin access control)
+async function uploadPDFDirect(filePath, originalName) {
+  return new Promise((resolve, reject) => {
+    cloudinary.uploader.upload(filePath, {
+      resource_type: "raw",
+      folder: "uploads",
+      public_id: generateUniqueFileName(originalName, 'pdf'),
+      // Sin access_mode para evitar bloqueos de entrega
+    }, (error, result) => {
+      if (error) {
+        reject(error);
+      } else {
+        resolve(result);
+      }
+    });
+  });
+}
 
 // Ruta de prueba para subir archivo
 app.post('/api/upload', upload.single('archivo'), async (req, res) => {
@@ -105,8 +120,63 @@ app.post('/api/upload', upload.single('archivo'), async (req, res) => {
   }
 });
 
+// Ruta alternativa para subir PDFs sin restricciones de acceso
+app.post('/api/upload-pdf-direct', upload.single('archivo'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: 'No se proporcionó ningún archivo PDF'
+      });
+    }
+
+    const isPDF = req.file.mimetype === 'application/pdf';
+    
+    if (!isPDF) {
+      return res.status(400).json({
+        success: false,
+        message: 'Solo se permiten archivos PDF en esta ruta'
+      });
+    }
+
+    // Usar la función de subida directa para evitar problemas de access control
+    const directUploadResult = await uploadPDFDirect(req.file.path, req.file.originalname);
+    
+    const response = {
+      success: true,
+      url: directUploadResult.secure_url,
+      public_id: directUploadResult.public_id,
+      nombre: req.file.originalname,
+      tipo: req.file.mimetype,
+      size: directUploadResult.bytes,
+      secure_url: directUploadResult.secure_url,
+      isPDF: true,
+      resource_type: 'raw',
+      upload_method: 'direct' // Indicar que se usó el método directo
+    };
+
+    // Agregar URLs específicas para PDFs
+    try {
+      const { generatePDFUrls } = await import('./utils/cloudinaryUtils.js');
+      const pdfUrls = generatePDFUrls(directUploadResult.public_id, req.file.originalname);
+      response.pdfUrls = pdfUrls;
+    } catch (urlError) {
+      console.warn('Error al generar URLs de PDF:', urlError);
+    }
+
+    res.json(response);
+  } catch (error) {
+    console.error('Error al subir PDF directamente:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error interno del servidor al subir PDF',
+      error: error.message
+    });
+  }
+});
+
 // Ruta para subir múltiples archivos
-app.post('/api/upload-multiple', upload.array('archivos', 10), (req, res) => {
+app.post('/api/upload-multiple', upload.array('archivos', 10), async (req, res) => {
   try {
     if (!req.files || req.files.length === 0) {
       return res.status(400).json({
@@ -115,13 +185,32 @@ app.post('/api/upload-multiple', upload.array('archivos', 10), (req, res) => {
       });
     }
 
-    const uploadedFiles = req.files.map(file => ({
-      url: file.path,
-      public_id: file.public_id,
-      nombre: file.originalname,
-      tipo: file.mimetype,
-      size: file.bytes,
-      secure_url: file.secure_url
+    const uploadedFiles = await Promise.all(req.files.map(async (file) => {
+      const isPDF = file.mimetype === 'application/pdf';
+      
+      const fileData = {
+        url: file.path,
+        public_id: file.public_id,
+        nombre: file.originalname,
+        tipo: file.mimetype,
+        size: file.bytes,
+        secure_url: file.secure_url,
+        isPDF: isPDF,
+        resource_type: isPDF ? 'raw' : 'auto'
+      };
+
+      // Si es PDF, agregar URLs específicas
+      if (isPDF) {
+        try {
+          const { generatePDFUrls } = await import('./utils/cloudinaryUtils.js');
+          const pdfUrls = generatePDFUrls(file.public_id, file.originalname);
+          fileData.pdfUrls = pdfUrls;
+        } catch (urlError) {
+          console.warn('Error al generar URLs de PDF para archivo múltiple:', urlError);
+        }
+      }
+
+      return fileData;
     }));
 
     res.json({
@@ -196,10 +285,36 @@ app.get('/api/download/:publicId', async (req, res) => {
 app.delete('/api/delete/:publicId', async (req, res) => {
   try {
     const { publicId } = req.params;
+    const { resourceType } = req.query; // Permitir especificar el resource_type
     
-    const result = await cloudinary.uploader.destroy(publicId, {
-      resource_type: 'auto'
-    });
+    // Si no se especifica resourceType, intentar con 'auto' primero, luego 'raw'
+    let result;
+    
+    if (resourceType) {
+      // Si se especifica el tipo de recurso, usarlo directamente
+      result = await cloudinary.uploader.destroy(publicId, {
+        resource_type: resourceType
+      });
+    } else {
+      // Intentar primero con 'auto'
+      try {
+        result = await cloudinary.uploader.destroy(publicId, {
+          resource_type: 'auto'
+        });
+        
+        // Si no se encontró con 'auto', intentar con 'raw' (para PDFs)
+        if (result.result === 'not found') {
+          result = await cloudinary.uploader.destroy(publicId, {
+            resource_type: 'raw'
+          });
+        }
+      } catch (error) {
+        // Si falla con 'auto', intentar con 'raw'
+        result = await cloudinary.uploader.destroy(publicId, {
+          resource_type: 'raw'
+        });
+      }
+    }
 
     if (result.result === 'ok') {
       res.json({

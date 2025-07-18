@@ -18,6 +18,7 @@
   "homepage": "https://github.com/JOTAPEPA/Hojas-de-vida-Back#readme",
   "description": "",
   "dependencies": {
+    "axios": "^1.10.0",
     "cloudinary": "^1.41.3",
     "cors": "^2.8.5",
     "dotenv": "^17.2.0",
